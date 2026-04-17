@@ -52,30 +52,37 @@ class ElectronicFst(GraphFst):
         common_words_graph = pynini.string_file(get_abs_path("data/electronic/common_words.tsv")).invert().optimize()
         protocols_graph = pynini.string_file(get_abs_path("data/electronic/protocols.tsv")).invert().optimize()
         file_ext_graph = pynini.string_file(get_abs_path("data/electronic/file_extensions.tsv")).invert().optimize()
-        subscript_digit_graph = (
-            pynini.string_file(get_abs_path("data/electronic/subscript_digit.tsv")).invert().optimize()
-        )
 
-        # Digit graphs (for IP address reconstruction digit-by-digit)
+        # Letters: Hindi spoken letter name -> Latin letter
+        # e.g. "पी" -> "p", "ई" -> "e", "जी" -> "g"
+        letters_graph = pynini.string_file(get_abs_path("data/electronic/letters.tsv")).invert().optimize()
+
+        # Digit graphs for IP address: spoken -> Devanagari digit
         hindi_digit_graph = pynini.string_file(get_abs_path("data/numbers/digit.tsv")).invert().optimize()
         hindi_zero_graph = pynini.string_file(get_abs_path("data/numbers/zero.tsv")).invert().optimize()
-        digit_graph = hindi_digit_graph | hindi_zero_graph
+        devanagari_digit = hindi_digit_graph | hindi_zero_graph
 
-        # Letters: Hindi letter name -> Latin letter (e.g. ए -> a, बी -> b)
-        # Uses the same letters.tsv that TN verbalizer uses (inverted)
-        latin_letters_graph = (
-            pynini.string_file(get_abs_path("data/numbers/digit.tsv")).invert()  # placeholder structure
-        )
-        # We build letter recognition from the symbols + common word graphs combined
-        # A spoken "word segment" is either a known server/common word or letter-by-letter
-        phonetic_word = server_name_graph | common_words_graph
+        # ASCII digit graph for usernames/domains: spoken -> ASCII digit (0-9)
+        # Compose: spoken hindi -> devanagari digit -> ascii digit
+        hi_to_ascii = pynini.string_map([
+            ("०", "0"), ("१", "1"), ("२", "2"), ("३", "3"), ("४", "4"),
+            ("५", "5"), ("६", "6"), ("७", "7"), ("८", "8"), ("९", "9"),
+        ]).optimize()
+        ascii_digit_graph = devanagari_digit @ hi_to_ascii
 
         # ==================== BUILDING BLOCKS ====================
 
-        # A single spoken token maps to its Latin equivalent.
-        # token_sep consumes the space between consecutive spoken tokens.
+        # token_sep: consume the space between consecutive spoken tokens
         token_sep = delete_space
-        word_token = pynutil.add_weight(phonetic_word, 0.9) | pynutil.add_weight(symbols_graph, 1.0)
+
+        # word_token: one spoken Hindi token -> its Latin/ASCII equivalent
+        # Priority: known phonetic word > digit > letter > symbol
+        word_token = (
+            pynutil.add_weight(server_name_graph | common_words_graph, 0.9)
+            | pynutil.add_weight(ascii_digit_graph, 0.95)
+            | pynutil.add_weight(letters_graph, 1.0)
+            | pynutil.add_weight(symbols_graph, 1.1)
+        )
 
         # spoken_dot: "डॉट" -> "."
         spoken_dot = pynini.cross("डॉट", ".")
@@ -86,7 +93,7 @@ class ElectronicFst(GraphFst):
 
         # ==================== DOMAIN RECONSTRUCTION ====================
         # One or more word tokens (space-separated) form a domain segment.
-        # e.g. "जीमेल" -> "gmail", "वेब एम डी" -> "webmd"
+        # e.g. "जीमेल" -> "gmail", "पी ई टी ई आर" -> "peter"
         tld = domain_graph | file_ext_graph
         domain_segment = word_token + pynini.closure(token_sep + word_token)
         dot_tld = token_sep + spoken_dot + token_sep + tld
@@ -99,25 +106,24 @@ class ElectronicFst(GraphFst):
 
         # ==================== USERNAME RECONSTRUCTION ====================
         # Everything before "एट" in an email.
-        # e.g. "जीमेल" -> "gmail"
+        # e.g. "पी ई टी ई आर शून्य आठ" -> "peter08"
         username_segment = word_token + pynini.closure(token_sep + word_token)
         username_tagged = pynutil.insert("username: \"") + username_segment + pynutil.insert("\"")
 
         # ==================== PROTOCOL RECONSTRUCTION ====================
-        # protocols.tsv (inverted): spoken form -> key ("https", "http", "www", ...)
         # e.g. "एच टी टी पी एस कोलन फॉरवर्ड स्लैश फॉरवर्ड स्लैश" -> "https"
         protocol_tagged = pynutil.insert("protocol: \"") + protocols_graph + pynutil.insert("\"")
 
         # ==================== IP ADDRESS RECONSTRUCTION ====================
         # e.g. "एक नौ दो डॉट एक छह आठ डॉट एक डॉट एक" -> "192.168.1.1"
-        ip_octet = digit_graph + pynini.closure(token_sep + digit_graph)
+        # IP uses Devanagari digits (matching TN output)
+        ip_octet = devanagari_digit + pynini.closure(token_sep + devanagari_digit)
         dot_octet = token_sep + spoken_dot + token_sep + ip_octet
         ip_address = ip_octet + pynini.closure(dot_octet, 3, 3)
         ip_tagged = pynutil.insert("domain: \"") + ip_address + pynutil.insert("\"")
 
         # ==================== COMBINED GRAPH ====================
         # Email: username + DELETE(एट) + domain
-        # Verbalizer reconstructs: username@domain
         email_graph = (
             username_tagged
             + token_sep
@@ -128,10 +134,9 @@ class ElectronicFst(GraphFst):
         )
 
         # URL: protocol + domain
-        # Verbalizer reconstructs: https://domain
         url_graph = protocol_tagged + token_sep + pynutil.insert(" ") + domain_tagged
 
-        # Domain only (no protocol, no username)
+        # Domain only
         domain_only_graph = domain_tagged
 
         # Combined with weights (lower = higher priority)
