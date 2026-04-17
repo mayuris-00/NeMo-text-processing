@@ -17,7 +17,6 @@ import pynini
 from pynini.lib import pynutil
 
 from nemo_text_processing.inverse_text_normalization.hi.graph_utils import (
-    NEMO_SIGMA,
     GraphFst,
     delete_space,
 )
@@ -73,84 +72,64 @@ class ElectronicFst(GraphFst):
 
         # ==================== BUILDING BLOCKS ====================
 
-        # dot: डॉट -> "."
+        # A single spoken token maps to its Latin equivalent.
+        # token_sep consumes the space between consecutive spoken tokens.
+        token_sep = delete_space
+        word_token = pynutil.add_weight(phonetic_word, 0.9) | pynutil.add_weight(symbols_graph, 1.0)
+
+        # spoken_dot: "डॉट" -> "."
         spoken_dot = pynini.cross("डॉट", ".")
-        # @ : एट -> "@"  (handled as a separator, not in symbols loop)
-        spoken_at = pynini.cross("एट", "@")
 
-        # A single spoken token: either a known phonetic word or a symbol
-        # Spoken char: maps one Hindi spoken token to one Latin char/symbol
-        spoken_char = pynutil.add_weight(phonetic_word, 0.9) | pynutil.add_weight(symbols_graph, 1.0)
-
-        # spoken_char + delete_space allows consuming space-separated tokens
-        # and concatenating their outputs without spaces
-        spoken_char_seq = pynini.closure(spoken_char + delete_space, 1)
+        # delete_at: consume "एट" completely.
+        # The verbalizer inserts "@" between username and domain fields.
+        delete_at = pynutil.delete("एट")
 
         # ==================== DOMAIN RECONSTRUCTION ====================
-        # domain segment: e.g. "जीमेल" -> "gmail"  or letter-by-letter
-        domain_segment = pynini.closure(spoken_char + delete_space, 0) + spoken_char
-
-        # TLD: e.g. "कॉम" -> "com"
+        # One or more word tokens (space-separated) form a domain segment.
+        # e.g. "जीमेल" -> "gmail", "वेब एम डी" -> "webmd"
         tld = domain_graph | file_ext_graph
-
-        # dot + TLD: "डॉट कॉम" -> ".com"
-        dot_tld = spoken_dot + delete_space + tld
-
-        # Full domain: "जीमेल डॉट कॉम" -> "gmail.com"
-        # One or more segments separated by spoken dots
+        domain_segment = word_token + pynini.closure(token_sep + word_token)
+        dot_tld = token_sep + spoken_dot + token_sep + tld
         domain_body = domain_segment + pynini.closure(dot_tld, 1)
 
-        # Optional trailing slash
-        optional_slash = pynini.closure(delete_space + pynini.cross("फॉरवर्ड स्लैश", "/"), 0, 1)
-
+        # Optional trailing forward-slash: "फॉरवर्ड स्लैश" -> "/"
+        optional_slash = pynini.closure(token_sep + pynini.cross("फॉरवर्ड स्लैश", "/"), 0, 1)
         domain_full = domain_body + optional_slash
-
-        # Tagged domain field
         domain_tagged = pynutil.insert("domain: \"") + domain_full + pynutil.insert("\"")
 
         # ==================== USERNAME RECONSTRUCTION ====================
-        # Username: everything before "एट" in an email
-        # e.g. "कुमार" -> "kumar",  "जॉन डॉट स्मिथ" -> "john.smith"
-        username_char = pynutil.add_weight(phonetic_word, 0.9) | pynutil.add_weight(symbols_graph, 1.0)
-        username_segment = pynini.closure(username_char + delete_space, 0) + username_char
+        # Everything before "एट" in an email.
+        # e.g. "जीमेल" -> "gmail"
+        username_segment = word_token + pynini.closure(token_sep + word_token)
         username_tagged = pynutil.insert("username: \"") + username_segment + pynutil.insert("\"")
 
         # ==================== PROTOCOL RECONSTRUCTION ====================
-        # e.g. "एच टी टी पी एस कोलन फॉरवर्ड स्लैश फॉरवर्ड स्लैश" -> "https://"
-        # protocols.tsv maps: https -> एच टी टी पी एस कोलन फॉरवर्ड स्लैश फॉरवर्ड स्लैश
-        # After invert: spoken -> "https" / "http" / "www" etc.
+        # protocols.tsv (inverted): spoken form -> key ("https", "http", "www", ...)
+        # e.g. "एच टी टी पी एस कोलन फॉरवर्ड स्लैश फॉरवर्ड स्लैश" -> "https"
         protocol_tagged = pynutil.insert("protocol: \"") + protocols_graph + pynutil.insert("\"")
 
         # ==================== IP ADDRESS RECONSTRUCTION ====================
         # e.g. "एक नौ दो डॉट एक छह आठ डॉट एक डॉट एक" -> "192.168.1.1"
-        # Digit-by-digit with spoken dots as separators
-        ip_digit = digit_graph
-        ip_octet = pynini.closure(ip_digit + delete_space, 0) + ip_digit
-        dot_octet = delete_space + spoken_dot + delete_space + ip_octet
+        ip_octet = digit_graph + pynini.closure(token_sep + digit_graph)
+        dot_octet = token_sep + spoken_dot + token_sep + ip_octet
         ip_address = ip_octet + pynini.closure(dot_octet, 3, 3)
-
         ip_tagged = pynutil.insert("domain: \"") + ip_address + pynutil.insert("\"")
 
-        # ==================== FILE WITH EXTENSION ====================
-        # e.g. "रिपोर्ट डॉट पी डी एफ" -> "report.pdf"
-        filename_stem = pynini.closure(spoken_char + delete_space, 0) + spoken_char
-        file_ext_spoken = file_ext_graph
-        file_with_ext = filename_stem + delete_space + spoken_dot + delete_space + file_ext_spoken
-        file_tagged = pynutil.insert("domain: \"") + file_with_ext + pynutil.insert("\"")
-
         # ==================== COMBINED GRAPH ====================
-        # Email: username + एट + domain
+        # Email: username + DELETE(एट) + domain
+        # Verbalizer reconstructs: username@domain
         email_graph = (
             username_tagged
-            + delete_space
-            + spoken_at
-            + delete_space
+            + token_sep
+            + delete_at
+            + token_sep
             + pynutil.insert(" ")
             + domain_tagged
         )
 
-        # URL with protocol: protocol + space + domain
-        url_graph = protocol_tagged + delete_space + pynutil.insert(" ") + domain_tagged
+        # URL: protocol + domain
+        # Verbalizer reconstructs: https://domain
+        url_graph = protocol_tagged + token_sep + pynutil.insert(" ") + domain_tagged
 
         # Domain only (no protocol, no username)
         domain_only_graph = domain_tagged
@@ -160,7 +139,6 @@ class ElectronicFst(GraphFst):
             pynutil.add_weight(url_graph, 1.0)
             | pynutil.add_weight(email_graph, 1.01)
             | pynutil.add_weight(ip_tagged, 1.02)
-            | pynutil.add_weight(file_tagged, 1.1)
             | pynutil.add_weight(domain_only_graph, 1.2)
         )
 
