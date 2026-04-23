@@ -70,15 +70,21 @@ class ElectronicFst(GraphFst):
         ]).optimize()
         ascii_digit_graph = devanagari_digit @ hi_to_ascii
 
+        # Two-digit number words: तेईस->23, अड़तालीस->48, तिरेसठ->63
+        # These appear in domain/username like email-23, laptop63
+        teens_graph = pynini.string_file(get_abs_path("data/numbers/teens_and_ties.tsv")).invert().optimize()
+        ascii_two_digit_graph = (teens_graph @ pynini.closure(hi_to_ascii, 1)).optimize()
+
         # ==================== BUILDING BLOCKS ====================
 
         # token_sep: consume the space between consecutive spoken tokens
         token_sep = delete_space
 
         # word_token: one spoken Hindi token -> its Latin/ASCII equivalent
-        # Priority: known phonetic word > digit > letter > symbol
+        # Priority: known phonetic word > two-digit number > single digit > letter > symbol
         word_token = (
             pynutil.add_weight(server_name_graph | common_words_graph, 0.9)
+            | pynutil.add_weight(ascii_two_digit_graph, 0.92)
             | pynutil.add_weight(ascii_digit_graph, 0.95)
             | pynutil.add_weight(letters_graph, 1.0)
             | pynutil.add_weight(symbols_graph, 1.1)
