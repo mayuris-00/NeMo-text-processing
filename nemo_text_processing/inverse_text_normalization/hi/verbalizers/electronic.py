@@ -82,10 +82,14 @@ class ElectronicFst(GraphFst):
         # Domain only: domain: "google.com"  ->  google.com
         domain_only_graph = domain_graph
 
+        # Path: path: "C:\\Users\\HP"  ->  C:\Users\HP
+        path_graph = pynutil.delete("path: \"") + content + delete_quote
+
         graph = (
             pynutil.add_weight(url_graph, 1.0)
             | pynutil.add_weight(email_graph, 1.01)
             | pynutil.add_weight(domain_only_graph, 1.02)
+            | pynutil.add_weight(path_graph, 1.03)
         )
 
         delete_tokens = self.delete_tokens(graph)
