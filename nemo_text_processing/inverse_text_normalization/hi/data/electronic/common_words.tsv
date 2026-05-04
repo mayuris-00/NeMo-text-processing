@@ -12,13 +12,10 @@ post	पोस्ट
 posts	पोस्ट्स
 page	पेज
 pages	पेजेस
-user	यूज़र
-users	यूज़र्स
 Users	यूज़र्स
 User	यूज़र
 Desktop	डेस्कटॉप
 Documents	डॉक्युमेंट्स
-Downloads	डाउनलोड्स
 Music	म्यूज़िक
 Pictures	पिक्चर्स
 Videos	वीडियोज़
@@ -34,16 +31,15 @@ explore	एक्सप्लोर
 wiki	विकी
 docs	डॉक्स
 download	डाउनलोड
-downloads	डाउनलोड्स
 upload	अपलोड
 uploads	अपलोड्स
 photos	फ़ोटोज़
 images	इमेजेज़
-music	म्यूज़िक
+Music	म्यूज़िक
 video	वीडियो
 videos	वीडियोज़
-desktop	डेस्कटॉप
-documents	डॉक्युमेंट्स
+Desktop	डेस्कटॉप
+Documents	डॉक्युमेंट्स
 master	मास्टर
 blob	ब्लॉब
 tree	ट्री
@@ -74,10 +70,9 @@ drive	ड्राइव
 cloud	क्लाउड
 services	सर्विसेज़
 india	इंडिया
-screenshot	स्क्रीनशॉट
-zoom	ज़ूम
-audacity	ऑडेसिटी
-coursera	कोर्सेरा
+Zoom	ज़ूम
+Audacity	ऑडेसिटी
+Coursera	कोर्सेरा
 apache	अपाची
 kernel	कर्नल
 bin	बिन
@@ -162,3 +157,5 @@ pope	पोप
 robin	रॉबिन
 price	प्राइस
 address	एड्रेस
+venv	वेन्व
+HP	एच पी
