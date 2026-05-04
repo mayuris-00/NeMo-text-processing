@@ -36,6 +36,7 @@ from nemo_text_processing.inverse_text_normalization.hi.taggers.punctuation impo
 from nemo_text_processing.inverse_text_normalization.hi.taggers.telephone import TelephoneFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.time import TimeFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.whitelist import WhiteListFst
+from nemo_text_processing.inverse_text_normalization.hi.taggers.electronic import ElectronicFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.word import WordFst
 
 
@@ -92,6 +93,8 @@ class ClassifyFst(GraphFst):
             punct_graph = PunctuationFst().fst
             whitelist_graph = WhiteListFst().fst
             word_graph = WordFst().fst
+            electronic = ElectronicFst()
+            electronic_graph = electronic.fst
 
             classify = (
                 pynutil.add_weight(cardinal_graph, 1.1)
@@ -103,6 +106,7 @@ class ClassifyFst(GraphFst):
                 | pynutil.add_weight(measure_graph, 1.1)
                 | pynutil.add_weight(money_graph, 1.1)
                 | pynutil.add_weight(telephone_graph, 1.1)
+                | pynutil.add_weight(electronic_graph, 1.0)
                 | pynutil.add_weight(word_graph, 100)
                 | pynutil.add_weight(whitelist_graph, 1.01)
             )
