@@ -26,12 +26,14 @@ from nemo_text_processing.inverse_text_normalization.hi.graph_utils import (
     generator_main,
 )
 from nemo_text_processing.inverse_text_normalization.hi.taggers.cardinal import CardinalFst
+from nemo_text_processing.inverse_text_normalization.hi.taggers.electronic import ElectronicFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.date import DateFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.decimal import DecimalFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.fraction import FractionFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.measure import MeasureFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.money import MoneyFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.ordinal import OrdinalFst
+from nemo_text_processing.inverse_text_normalization.hi.taggers.percentage import PercentageFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.punctuation import PunctuationFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.telephone import TelephoneFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.time import TimeFst
@@ -74,12 +76,17 @@ class ClassifyFst(GraphFst):
             cardinal = CardinalFst()
             cardinal_graph = cardinal.fst
 
+            electronic = ElectronicFst()
+            electronic_graph = electronic.fst
+
             ordinal = OrdinalFst(cardinal)
             ordinal_graph = ordinal.fst
             decimal = DecimalFst(cardinal)
             decimal_graph = decimal.fst
             fraction = FractionFst(cardinal)
             fraction_graph = fraction.fst
+            percentage = PercentageFst(cardinal)
+            percentage_graph = percentage.fst
             date = DateFst(cardinal)
             date_graph = date.fst
             time = TimeFst()
@@ -101,8 +108,9 @@ class ClassifyFst(GraphFst):
                 | pynutil.add_weight(ordinal_graph, 1.1)
                 | pynutil.add_weight(decimal_graph, 1.1)
                 | pynutil.add_weight(fraction_graph, 1.1)
+                | pynutil.add_weight(percentage_graph, 1.1)
                 | pynutil.add_weight(date_graph, 1.1)
-                | pynutil.add_weight(time_graph, 1.1)
+                | pynutil.add_weight(time_graph, 4)
                 | pynutil.add_weight(measure_graph, 1.1)
                 | pynutil.add_weight(money_graph, 1.1)
                 | pynutil.add_weight(telephone_graph, 1.1)

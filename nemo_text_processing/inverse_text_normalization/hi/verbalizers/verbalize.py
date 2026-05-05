@@ -15,12 +15,14 @@
 
 from nemo_text_processing.inverse_text_normalization.hi.graph_utils import GraphFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.cardinal import CardinalFst
+from nemo_text_processing.inverse_text_normalization.hi.verbalizers.electronic import ElectronicFst as ElectronicVerbFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.date import DateFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.decimal import DecimalFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.fraction import FractionFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.measure import MeasureFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.money import MoneyFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.ordinal import OrdinalFst
+from nemo_text_processing.inverse_text_normalization.hi.verbalizers.percentage import PercentageFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.telephone import TelephoneFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.time import TimeFst
 from nemo_text_processing.inverse_text_normalization.hi.verbalizers.whitelist import WhiteListFst
@@ -39,10 +41,13 @@ class VerbalizeFst(GraphFst):
         super().__init__(name="verbalize", kind="verbalize")
         cardinal = CardinalFst()
         cardinal_graph = cardinal.fst
-        ordinal_graph = OrdinalFst().fst
+        electronic_graph = ElectronicVerbFst().fst
+        ordinal = OrdinalFst()
+        ordinal_graph = ordinal.fst
         decimal = DecimalFst()
         decimal_graph = decimal.fst
         fraction_graph = FractionFst().fst
+        percentage_graph = PercentageFst().fst
         date_graph = DateFst().fst
         time_graph = TimeFst().fst
         measure_graph = MeasureFst(cardinal, decimal).fst
@@ -59,6 +64,7 @@ class VerbalizeFst(GraphFst):
             | ordinal_graph
             | decimal_graph
             | fraction_graph
+            | percentage_graph
             | date_graph
             | time_graph
             | measure_graph
