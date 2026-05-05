@@ -22,26 +22,15 @@ class ElectronicFst(GraphFst):
     Finite state transducer for classifying spoken Hindi electronic strings
     into structured token form (ITN direction: spoken → written).
 
-    Inverse of TN hi/tn/electronic/classify.py.
-    Data files in data/electronic/ generated from TN source TSVs.
-
-    Examples:
-        "कुमार एट जीमेल डॉट कॉम"
-            → electronic { username: "kumar" domain: "gmail.com" }
-        "एच टी टी पी एस कोलन फॉरवर्ड स्लैश फॉरवर्ड स्लैश गूगल डॉट कॉम"
-            → electronic { protocol: "https" domain: "google.com" }
-        "सी कोलन बैकवर्ड स्लैश यूज़र्स बैकवर्ड स्लैश एच पी"
-            → electronic { path: "C:\\Users\\HP" }
-        "एक नौ दो डॉट एक छह आठ डॉट एक डॉट एक"
-            → electronic { domain: "192.168.1.1" }
-        "ग्लूकोज"
-            → electronic { domain: "C6H12O6" }
-        "एन नौ पाँच"
-            → electronic { domain: "N95" }
+    Fixes applied (v2):
+      - digit_graph now produces ASCII digits (0-9), not Devanagari
+      - हाइफ़न/हाइफन → - confirmed in symbol_graph (fixes codes like GSAT-18)
+      - Bare backslash paths (बैकवर्ड स्लैश ...) now matched
+      - www. inside URL paths no longer inserts a space
+      - Cased word variants added (Downloads, Desktop, Zoom etc.)
 
     Args:
-        deterministic: if True will provide a single transduction option,
-            for False multiple transductions are generated (audio-based normalization)
+        deterministic: if True will provide a single transduction option
     """
 
     def __init__(self, deterministic: bool = True):
@@ -84,12 +73,9 @@ class ElectronicFst(GraphFst):
             get_abs_path("data/electronic/hindi_chemical_inv.tsv")
         ).optimize()
 
-        # ── Space consumer ───────────────────────────────────────────────
         sp = delete_space
 
-        # ── Atomic token weights (lower = higher priority) ───────────────
-        # chemical(0.5) > word(0.9) > file-ext(0.95) >
-        # letter/digit(1.0) > subscript(1.05) > symbol(1.1)
+        # ── Atomic token weights ─────────────────────────────────────────
         chem_tok      = pynutil.add_weight(chemical_graph,  0.5)
         word_tok      = pynutil.add_weight(word_graph,      0.9)
         file_ext_tok  = pynutil.add_weight(file_ext_graph,  0.95)
@@ -103,16 +89,23 @@ class ElectronicFst(GraphFst):
             | letter_tok | digit_tok | subscript_tok | symbol_tok
         )
 
-        # "डॉट <TLD>" → ".<tld>"  e.g. "डॉट कॉम" → ".com"
+        # "डॉट <TLD>" → ".<tld>"
         dot_tld = pynini.cross("डॉट", ".") + sp + domain_tld_graph
 
+        # ── FIX: www inside domain path — produce "www." without space ────
+        # "डब्ल्यू डब्ल्यू डब्ल्यू डॉट" → "www." as a single domain unit
+        www_inline = pynini.cross(
+            "डब्ल्यू डब्ल्यू डब्ल्यू डॉट", "www."
+        )
+
         domain_unit = (
-            pynutil.add_weight(word_tok,       0.9)
-            | pynutil.add_weight(file_ext_tok, 0.95)
-            | pynutil.add_weight(dot_tld,      0.95)
-            | pynutil.add_weight(letter_tok,   1.0)
-            | pynutil.add_weight(digit_tok,    1.0)
-            | pynutil.add_weight(symbol_tok,   1.1)
+            pynutil.add_weight(www_inline,     0.85)  # highest — www. wins
+            | pynutil.add_weight(word_tok,       0.9)
+            | pynutil.add_weight(file_ext_tok,   0.95)
+            | pynutil.add_weight(dot_tld,        0.95)
+            | pynutil.add_weight(letter_tok,     1.0)
+            | pynutil.add_weight(digit_tok,      1.0)
+            | pynutil.add_weight(symbol_tok,     1.1)
         )
 
         token_seq  = any_char  + pynini.closure(sp + any_char)
@@ -125,34 +118,80 @@ class ElectronicFst(GraphFst):
         ins_path     = pynutil.insert("path: \"")
         ins_close    = pynutil.insert("\"")
 
-        # ── EMAIL ────────────────────────────────────────────────────────
+        # ── EMAIL ─────────────────────────────────────────────────────────
         username_seq = ins_username + token_seq + ins_close
         at_boundary  = sp + pynini.cross("एट", "") + sp
         domain_field = ins_domain + domain_seq + ins_close
         email_graph  = username_seq + at_boundary + domain_field
 
-        # ── URL ──────────────────────────────────────────────────────────
+        # ── URL ───────────────────────────────────────────────────────────
         protocol_field = ins_protocol + protocol_graph + ins_close
         url_graph      = protocol_field + sp + domain_field
 
-        # ── FILE PATH ────────────────────────────────────────────────────
-        path_field = ins_path + token_seq + ins_close
-        path_graph = path_field
+        # ── FILE PATH (Windows: C: or D: prefix) ─────────────────────────
+        path_field      = ins_path + token_seq + ins_close
+        windows_trigger = (
+            pynini.cross("सी", "C") | pynini.cross("डी", "D")
+            | pynini.cross("ई", "E") | pynini.cross("एफ", "F")
+        )
+        windows_colon = sp + pynini.cross("कोलन", ":") + sp
+        windows_path = (
+            ins_path
+            + windows_trigger
+            + windows_colon
+            + pynini.cross("बैकवर्ड स्लैश", "\\")
+            + pynini.closure(sp + any_char)
+            + ins_close
+        )
 
-        # ── IP ADDRESS ───────────────────────────────────────────────────
+        # ── FIX: Bare backslash path (बैकवर्ड स्लैश ...) ─────────────────
+        bare_backslash_path = (
+            ins_path
+            + pynini.cross("बैकवर्ड स्लैश", "\\")
+            + pynini.closure(sp + any_char)
+            + ins_close
+        )
+
+        # ── Unix path (फॉरवर्ड स्लैश ...) ────────────────────────────────
+        unix_path = (
+            ins_path
+            + pynini.cross("फॉरवर्ड स्लैश", "/")
+            + pynini.closure(sp + any_char)
+            + ins_close
+        )
+
+        # Relative path (word + फॉरवर्ड स्लैश + ...) e.g. backups/temp
+        relative_path = (
+            ins_path
+            + any_char
+            + pynini.closure(
+                sp + pynini.cross("फॉरवर्ड स्लैश", "/") + sp + any_char
+            )
+            + ins_close
+        )
+
+        path_graph = (
+            pynutil.add_weight(windows_path,       1.0)
+            | pynutil.add_weight(bare_backslash_path, 1.0)
+            | pynutil.add_weight(unix_path,        1.0)
+            | pynutil.add_weight(relative_path,    1.1)
+            | pynutil.add_weight(path_field,       1.2)
+        )
+
+        # ── IP ADDRESS ────────────────────────────────────────────────────
         digit_run = digit_tok + pynini.closure(sp + digit_tok)
         dot_sep   = sp + pynini.cross("डॉट", ".") + sp
         ip_seq    = digit_run + dot_sep + digit_run + dot_sep + digit_run + dot_sep + digit_run
         ip_graph  = ins_domain + ip_seq + ins_close
 
-        # ── CHEMICAL FORMULA ─────────────────────────────────────────────
+        # ── CHEMICAL FORMULA ──────────────────────────────────────────────
         chem_seq    = (
             pynutil.add_weight(chemical_graph, 0.5)
             | pynutil.add_weight(token_seq,    1.0)
         )
         chem_tagged = ins_domain + chem_seq + ins_close
 
-        # ── DOMAIN / ALPHANUMERIC CODE (fallback) ────────────────────────
+        # ── DOMAIN / ALPHANUMERIC CODE (fallback) ─────────────────────────
         domain_only_graph = ins_domain + domain_seq + ins_close
 
         # ── Combined graph ────────────────────────────────────────────────
