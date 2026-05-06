@@ -125,8 +125,18 @@ class ClassifyFst(GraphFst):
                 pynini.closure(punct + pynutil.insert(" ")) + token + pynini.closure(pynutil.insert(" ") + punct)
             )
 
+            # Multi-token electronic pattern — must be tried BEFORE single-token loop
+            # so that "आई ई एल एफ शून्य शून्य चार" matches as ONE electronic token
+            # rather than being split into electronic+telephone tokens
+            electronic_token = pynutil.insert("tokens { ") + electronic_graph + pynutil.insert(" }")
+            electronic_multi = electronic_token + pynini.closure(delete_extra_space + token_plus_punct)
+            electronic_multi = delete_space + electronic_multi + delete_space
+
             graph = token_plus_punct + pynini.closure(delete_extra_space + token_plus_punct)
             graph = delete_space + graph + delete_space
+
+            # Give electronic_multi lower weight so it is preferred over token-by-token
+            graph = pynutil.add_weight(electronic_multi, 0.9) | pynutil.add_weight(graph, 1.0)
 
             self.fst = graph.optimize()
 
