@@ -1,0 +1,14 @@
+Loading training data: C:\Users\MAYURI\hi_itn_test\Blind_test_fixed
+Traceback (most recent call last):
+  File "C:\Users\MAYURI\hi_itn_test\NeMo-text-processing\nemo_text_processing\inverse_text_normalization\run_evaluate.py", line 71, in <module>
+    training_data = load_files([file_path], to_lower=to_lower)
+  File "C:\Users\MAYURI\anaconda3\Lib\site-packages\nemo_text_processing\text_normalization\data_loader_utils.py", line 104, in load_files
+    res.extend(load_func(file_path=file_path, to_lower=to_lower))
+               ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\MAYURI\anaconda3\Lib\site-packages\nemo_text_processing\text_normalization\data_loader_utils.py", line 75, in _load_kaggle_text_norm_file
+    for line in fp:
+                ^^
+  File "C:\Users\MAYURI\anaconda3\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x8f in position 26: character maps to <undefined>
