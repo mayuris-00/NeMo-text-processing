@@ -525,12 +525,12 @@ class ElectronicFst(GraphFst):
 
         alnum_phrase_fst = pynutil.insert("domain: \"") + special_codes_map + pynutil.insert("\"")
 
-        ex_upper    = pynutil.delete("एक्स") + pynutil.insert("X")
+        ex_lower    = pynutil.delete("एक्स") + pynutil.insert("x")
         alnum_token = (
-            pynutil.add_weight(ex_upper,           0.90)
-            | pynutil.add_weight(digit_glyphs,     0.92)
-            | pynutil.add_weight(digit_words,      0.94)
-            | pynutil.add_weight(letter_map_upper, 1.00)
+            pynutil.add_weight(ex_lower,           0.75)
+            | pynutil.add_weight(digit_glyphs,     0.77)
+            | pynutil.add_weight(digit_words,      0.79)
+            | pynutil.add_weight(letter_map_lower, 0.84)
         )
         alnum_run  = alnum_token + pynini.closure(delete_space + alnum_token, 0)
 
