@@ -33,12 +33,10 @@ from nemo_text_processing.inverse_text_normalization.hi.taggers.fraction import 
 from nemo_text_processing.inverse_text_normalization.hi.taggers.measure import MeasureFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.money import MoneyFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.ordinal import OrdinalFst
-from nemo_text_processing.inverse_text_normalization.hi.taggers.percentage import PercentageFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.punctuation import PunctuationFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.telephone import TelephoneFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.time import TimeFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.whitelist import WhiteListFst
-from nemo_text_processing.inverse_text_normalization.hi.taggers.electronic import ElectronicFst
 from nemo_text_processing.inverse_text_normalization.hi.taggers.word import WordFst
 
 
@@ -76,20 +74,15 @@ class ClassifyFst(GraphFst):
             cardinal = CardinalFst()
             cardinal_graph = cardinal.fst
 
-            electronic = ElectronicFst()
-            electronic_graph = electronic.fst
-
             ordinal = OrdinalFst(cardinal)
             ordinal_graph = ordinal.fst
             decimal = DecimalFst(cardinal)
             decimal_graph = decimal.fst
             fraction = FractionFst(cardinal)
             fraction_graph = fraction.fst
-            percentage = PercentageFst(cardinal)
-            percentage_graph = percentage.fst
-            date = DateFst(cardinal)
+            date = DateFst(cardinal, ordinal)
             date_graph = date.fst
-            time = TimeFst()
+            time = TimeFst(cardinal)
             time_graph = time.fst
             measure = MeasureFst(cardinal, decimal)
             measure_graph = measure.fst
@@ -97,23 +90,22 @@ class ClassifyFst(GraphFst):
             money_graph = money.fst
             telephone = TelephoneFst(cardinal)
             telephone_graph = telephone.fst
+            electronic = ElectronicFst()
+            electronic_graph = electronic.fst
             punct_graph = PunctuationFst().fst
             whitelist_graph = WhiteListFst().fst
             word_graph = WordFst().fst
-            electronic = ElectronicFst()
-            electronic_graph = electronic.fst
 
             classify = (
                 pynutil.add_weight(cardinal_graph, 1.1)
                 | pynutil.add_weight(ordinal_graph, 1.1)
                 | pynutil.add_weight(decimal_graph, 1.1)
                 | pynutil.add_weight(fraction_graph, 1.1)
-                | pynutil.add_weight(percentage_graph, 1.1)
                 | pynutil.add_weight(date_graph, 1.1)
-                | pynutil.add_weight(time_graph, 4)
+                | pynutil.add_weight(time_graph, 1.1)
                 | pynutil.add_weight(measure_graph, 1.1)
                 | pynutil.add_weight(money_graph, 1.1)
-                | pynutil.add_weight(telephone_graph, 5.0)
+                | pynutil.add_weight(telephone_graph, 1.1)
                 | pynutil.add_weight(electronic_graph, 0.5)
                 | pynutil.add_weight(word_graph, 100)
                 | pynutil.add_weight(whitelist_graph, 1.01)
@@ -127,22 +119,6 @@ class ClassifyFst(GraphFst):
 
             graph = token_plus_punct + pynini.closure(delete_extra_space + token_plus_punct)
             graph = delete_space + graph + delete_space
-
-            # Multi-token electronic: wrap entire multi-word electronic span as ONE token
-            # This must use the FULL sentence-level graph so electronic gets priority
-            # over telephone/cardinal which would otherwise steal individual digit words.
-            # Strategy: try matching electronic_graph spanning MULTIPLE space-separated
-            # spoken words, wrapped as a single tokens{} block, then optionally followed
-            # by more tokens.
-            electronic_sentence = (
-                delete_space
-                + pynutil.insert("tokens { ")
-                + pynutil.add_weight(electronic_graph, 0.5)
-                + pynutil.insert(" }")
-                + pynini.closure(delete_extra_space + token_plus_punct)
-                + delete_space
-            )
-            graph = electronic_sentence | graph
 
             self.fst = graph.optimize()
 
