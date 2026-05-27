@@ -68,7 +68,7 @@ class ElectronicFst(GraphFst):
         )
         single_digit = (
             pynutil.add_weight(digit_glyphs, 0.8)
-            | pynutil.add_weight(digit_words,  0.9)
+            | pynutil.add_weight(digit_words,  0.50)
         )
         digit_seq = (
             pynutil.add_weight(digit_glyphs + pynini.closure(digit_glyphs, 0), 0.8)
@@ -529,7 +529,7 @@ class ElectronicFst(GraphFst):
         alnum_token = (
             pynutil.add_weight(ex_lower,           0.75)
             | pynutil.add_weight(digit_glyphs,     0.77)
-            | pynutil.add_weight(digit_words,      0.79)
+            | pynutil.add_weight(digit_words,      0.50)
             | pynutil.add_weight(letter_map_lower, 0.84)
         )
         alnum_run  = alnum_token + pynini.closure(delete_space + alnum_token, 0)
