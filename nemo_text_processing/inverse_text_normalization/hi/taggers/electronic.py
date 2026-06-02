@@ -389,7 +389,7 @@ class ElectronicFst(GraphFst):
             | pynutil.add_weight(digit_glyphs,     0.88)
             | pynutil.add_weight(server_map,       0.90)
             | pynutil.add_weight(common_map,       0.95)
-            | pynutil.add_weight(letter_map_lower, 1.00)
+            | pynutil.add_weight(letter_map_lower, 0.84)  # lowered from 1.00 to prevent username splits
         )
         uname_sep = (
             (delete_space + pynutil.delete("डॉट")   + delete_space + pynutil.insert("."))
@@ -411,7 +411,7 @@ class ElectronicFst(GraphFst):
         )
 
         path_atom_url = (
-            pynutil.add_weight(digit_seq + x_sep + digit_seq,                                           0.75)
+            pynutil.add_weight(digit_seq + x_sep + delete_space + digit_seq,                            0.75)
             | pynutil.add_weight(digit_seq + delete_space + letter_map_lower + delete_space + digit_seq, 0.80)
             | pynutil.add_weight(digit_words,                                                            0.88)
             | pynutil.add_weight(digit_glyphs,                                                           0.89)
@@ -443,10 +443,14 @@ class ElectronicFst(GraphFst):
         )
 
         slash_with_word = url_slash + (
-            pynutil.add_weight(delete_space + pynutil.insert(".") + pynutil.delete("डॉट") + delete_space + token_seq, 0.90)
-            | pynutil.add_weight(delete_space + inline_domain_seg, 0.95)
-            | pynutil.add_weight(delete_space + www_as_path_seg,   0.97)
-            | pynutil.add_weight(delete_space + path_segment_url,  1.00)
+            # WxH image-dimension segment (e.g. /251x458) — before plain digit_seq
+            pynutil.add_weight(delete_space + digit_seq + x_sep + delete_space + digit_seq,                          0.20)
+            # Pure-digit path segment (e.g. /956) — beats Cardinal handling digits separately
+            | pynutil.add_weight(delete_space + digit_seq,                                                            0.30)
+            | pynutil.add_weight(delete_space + pynutil.insert(".") + pynutil.delete("डॉट") + delete_space + token_seq, 0.90)
+            | pynutil.add_weight(delete_space + inline_domain_seg,                                                    0.95)
+            | pynutil.add_weight(delete_space + www_as_path_seg,                                                      0.97)
+            | pynutil.add_weight(delete_space + path_segment_url,                                                     1.00)
         )
 
         hash_frag_body = token_seq + pynini.closure(hyphen + token_seq, 0)
@@ -511,34 +515,48 @@ class ElectronicFst(GraphFst):
             | pynutil.add_weight(digit_glyphs,          0.92)
             | pynutil.add_weight(letter_map,             1.00)
         )
+        chem_more = pynini.closure(
+            pynutil.add_weight(delete_space + chem_token, 1.0)
+            | pynutil.add_weight(open_bracket,  1.0)
+            | pynutil.add_weight(close_bracket, 1.0)
+            | pynutil.add_weight(delete_space + pynutil.delete("इनदो") + pynutil.insert("("),  1.0)
+            | pynutil.add_weight(delete_space + pynutil.delete("बाय")   + pynutil.insert(")"),  1.0)
+            | pynutil.add_weight(delete_space + (pynutil.delete("माइनस") | pynutil.delete("–")) + pynutil.insert("−"), 1.0)
+        , 0)
+        # Require at least 2 chem tokens — prevents single Hindi postpositions like
+        # "के" from being consumed as chemical symbol K.
         chem_spelled_fst = pynutil.insert("domain: \"") + (
-            chem_token
-            + pynini.closure(
-                pynutil.add_weight(delete_space + chem_token, 1.0)
-                | pynutil.add_weight(open_bracket,  1.0)
-                | pynutil.add_weight(close_bracket, 1.0)
-                | pynutil.add_weight(delete_space + pynutil.delete("इनदो") + pynutil.insert("("),  1.0)
-                | pynutil.add_weight(delete_space + pynutil.delete("बाय")   + pynutil.insert(")"),  1.0)
-                | pynutil.add_weight(delete_space + (pynutil.delete("माइनस") | pynutil.delete("–")) + pynutil.insert("−"), 1.0)
-            , 0)
+            chem_token + delete_space + chem_token + chem_more
         ) + pynutil.insert("\"")
 
         alnum_phrase_fst = pynutil.insert("domain: \"") + special_codes_map + pynutil.insert("\"")
 
         ex_lower    = pynutil.delete("एक्स") + pynutil.insert("x")
+        # alnum_token uses letter_map_upper (all uppercase) so codes like ISBN, ICICI
+        # match their gold labels; digit_words at 0.10 keeps digits attached to prefix.
         alnum_token = (
-            pynutil.add_weight(ex_lower,           0.75)
-            | pynutil.add_weight(digit_glyphs,     0.77)
-            | pynutil.add_weight(digit_words,      0.50)
-            | pynutil.add_weight(letter_map_lower, 0.84)
+            pynutil.add_weight(digit_glyphs,   0.77)
+            | pynutil.add_weight(digit_words,  0.10)
+            | pynutil.add_weight(letter_map_upper, 0.84)  # uppercase output
         )
-        alnum_run  = alnum_token + pynini.closure(delete_space + alnum_token, 0)
+        # Require at least 2 alnum tokens — prevents single Hindi postpositions like
+        # "के" from being stolen as letter "K".
+        alnum_run  = alnum_token + delete_space + alnum_token + pynini.closure(delete_space + alnum_token, 0)
 
-        alnum_body = alnum_run + pynini.closure(
-            pynutil.add_weight(
-                delete_space + (pynutil.delete("हाइफ़न") | pynutil.delete("हाइफन"))
-                + pynutil.insert("-") + delete_space
-                + alnum_token + pynini.closure(delete_space + alnum_token, 0), 1.0)
+        # Hyphen extension: "-" + one or more alnum tokens (for f-35b, t-72, c-295 etc.)
+        alnum_hyphen_ext = (
+            delete_space + (pynutil.delete("हाइफ़न") | pynutil.delete("हाइफन"))
+            + pynutil.insert("-") + delete_space
+            + alnum_token + pynini.closure(delete_space + alnum_token, 0)
+        )
+        # alnum_body can start with 2+ tokens (standard) OR 1 token + hyphen extension
+        # (single-letter-prefix codes like f-35b without re-enabling single-word theft).
+        alnum_body_start = (
+            alnum_run
+            | (alnum_token + alnum_hyphen_ext)
+        )
+        alnum_body = alnum_body_start + pynini.closure(
+            pynutil.add_weight(alnum_hyphen_ext, 1.0)
             | pynutil.add_weight(
                 delete_space
                 + (pynutil.delete("डॉट") | pynutil.delete("DOT") | pynutil.delete("प्वाइंट"))
