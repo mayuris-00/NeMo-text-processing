@@ -33,6 +33,14 @@ digit_without_shunya = (
 )
 digit = digit_without_shunya | shunya
 
+# two-digit groups for pair-wise phone number reading,
+# e.g. इक्यासी दस इकसठ सड़सठ शून्य आठ -> ८१ १० ६१ ६७ ०८
+two_digit_pair = (
+    pynini.string_file(get_abs_path("data/numbers/teens_and_ties.tsv")).invert()
+    | pynini.string_file(get_abs_path("data/telephone/teens_and_ties_eng_to_hin.tsv")).invert()
+    | (shunya + delete_space + digit)
+)
+
 
 def get_context(keywords: list):
     keywords = pynini.union(*keywords)
@@ -60,9 +68,13 @@ def get_context(keywords: list):
     return before, after
 
 
-def generate_context_graph(context_keywords, length):
+def generate_context_graph(context_keywords, length, allow_ke_prefix=False):
     context_before, context_after = get_context(context_keywords)
     digits = pynini.closure(digit + delete_space, length - 1, length - 1) + digit
+    if allow_ke_prefix:
+        # absorb a preceding postposition "के" so that the digit run is not
+        # captured by the electronic grammar as an alphanumeric code (के = letter K)
+        digits = pynini.closure(pynini.accep("के") + NEMO_WHITE_SPACE, 0, 1) + digits
 
     graph_after_context = digits + NEMO_WHITE_SPACE + context_after
     graph_before_context = context_before + NEMO_WHITE_SPACE + digits
@@ -80,13 +92,17 @@ def generate_pincode(context_keywords):
 
 
 def generate_credit(context_keywords):
-    return generate_context_graph(context_keywords, 4)
+    return generate_context_graph(context_keywords, 4, allow_ke_prefix=True)
 
 
 def generate_mobile(context_keywords):
     context_before, context_after = get_context(context_keywords)
 
-    country_code = pynini.cross("प्लस", "+") + pynini.closure(delete_space + digit, 2, 2) + NEMO_WHITE_SPACE
+    country_code = (
+        pynini.cross("प्लस", "+")
+        + (pynini.closure(delete_space + digit, 2, 2) | (delete_space + two_digit_pair))
+        + NEMO_WHITE_SPACE
+    )
     graph_country_code = (
         pynutil.insert("country_code: \"")
         + (context_before + NEMO_WHITE_SPACE) ** (0, 1)
@@ -95,14 +111,23 @@ def generate_mobile(context_keywords):
     )
 
     number_part = digit_without_shunya + delete_space + pynini.closure(digit + delete_space, 8, 8) + digit
+    # pair-wise reading (five two-digit groups), only with a country code to
+    # avoid capturing sequences of regular cardinals
+    number_part_pairs = two_digit_pair + pynini.closure(delete_space + two_digit_pair, 4, 4)
     graph_number = (
         pynutil.insert("number_part: \"")
         + number_part
         + pynini.closure(NEMO_WHITE_SPACE + context_after, 0, 1)
         + pynutil.insert("\" ")
     )
+    graph_number_pairs = (
+        pynutil.insert("number_part: \"")
+        + number_part_pairs
+        + pynini.closure(NEMO_WHITE_SPACE + context_after, 0, 1)
+        + pynutil.insert("\" ")
+    )
 
-    graph = (graph_country_code + graph_number) | graph_number
+    graph = (graph_country_code + (graph_number | graph_number_pairs)) | graph_number
     return graph.optimize()
 
 

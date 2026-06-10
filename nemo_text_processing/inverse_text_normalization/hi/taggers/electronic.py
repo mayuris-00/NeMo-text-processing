@@ -177,11 +177,12 @@ class ElectronicFst(GraphFst):
         )
         v_prefix = pynutil.delete("वी") + pynutil.insert("v")
         hp_token = pynutil.delete("एच") + delete_space + pynutil.delete("पी") + pynutil.insert("HP")
-        tilde_delete = pynutil.delete("~") | pynutil.delete("टिल्ड")
+        tilde_keep = pynini.accep("~") | pynini.cross("टिल्ड", "~")
 
         single_token = (
             pynutil.add_weight(server_map, 0.90)
             | pynutil.add_weight(common_map, 0.95)
+            | pynutil.add_weight(and_as_letters, 0.95)
             | pynutil.add_weight(letter_map_lower, 1.00)
         )
         token_seq = single_token + pynini.closure(delete_space + single_token, 0)
@@ -204,7 +205,7 @@ class ElectronicFst(GraphFst):
             | pynutil.add_weight(digit_words, 0.94)
             | pynutil.add_weight(digit_glyphs, 0.95)
             | pynutil.add_weight(latin_run_lower, 0.97)
-            | pynutil.add_weight(letter_map_lower, 1.00)
+            | pynutil.add_weight(letter_map_lower, 0.90)
         )
         unix_path_atom = (
             pynutil.add_weight(www_token, 0.77)
@@ -345,7 +346,7 @@ class ElectronicFst(GraphFst):
         )
         tilde_path_fst = (
             pynutil.insert("path: \"")
-            + tilde_delete
+            + tilde_keep
             + unix_seg_slash
             + unix_segment
             + pynini.closure(unix_seg_slash + unix_segment, 0)
@@ -388,7 +389,7 @@ class ElectronicFst(GraphFst):
         domain_single = (
             pynutil.add_weight(server_map_lower, 0.90)
             | pynutil.add_weight(common_map_lower, 0.95)
-            | pynutil.add_weight(letter_map_lower, 1.00)
+            | pynutil.add_weight(letter_map_lower, 0.80)
         )
         domain_token_seq = domain_single + pynini.closure(delete_space + domain_single, 0)
 
@@ -411,11 +412,11 @@ class ElectronicFst(GraphFst):
 
         uname_atom = (
             pynutil.add_weight(and_as_letters, 0.84)
-            | pynutil.add_weight(digit_words, 0.88)
-            | pynutil.add_weight(digit_glyphs, 0.88)
+            | pynutil.add_weight(digit_words, 0.80)
+            | pynutil.add_weight(digit_glyphs, 0.80)
             | pynutil.add_weight(server_map, 0.90)
             | pynutil.add_weight(common_map, 0.95)
-            | pynutil.add_weight(letter_map_lower, 0.84)
+            | pynutil.add_weight(letter_map_lower, 0.80)
         )
         uname_sep = (
             (delete_space + pynutil.delete("डॉट") + delete_space + pynutil.insert("."))
@@ -468,7 +469,7 @@ class ElectronicFst(GraphFst):
         path_segment_url = (
             path_atom_url
             + pynini.closure(hyphen + (digit_seq | token_seq), 0)
-            + pynini.closure(underscore + token_seq, 0)
+            + pynini.closure(underscore + delete_space + token_seq, 0)
             + pynini.closure(dot + token_seq, 0, 1)
         )
 
@@ -487,7 +488,7 @@ class ElectronicFst(GraphFst):
                 delete_space + pynutil.insert(".") + pynutil.delete("डॉट") + delete_space + token_seq, 0.90
             )
             | pynutil.add_weight(delete_space + inline_domain_seg, 0.95)
-            | pynutil.add_weight(delete_space + www_as_path_seg, 0.97)
+            | pynutil.add_weight(delete_space + www_as_path_seg, 0.20)
             | pynutil.add_weight(delete_space + path_segment_url, 1.00)
         )
 
@@ -591,20 +592,35 @@ class ElectronicFst(GraphFst):
 
         alnum_phrase_fst = pynutil.insert("domain: \"") + special_codes_map + pynutil.insert("\"")
 
-        alnum_token = (
-            pynutil.add_weight(digit_glyphs, 0.77)
-            | pynutil.add_weight(digit_words, 0.10)
-            | pynutil.add_weight(letter_map_upper, 0.84)
+        # digit words and letters are kept expensive enough that pure digit
+        # runs prefer the telephone grammar (Devanagari digits) and spelled
+        # domains/emails prefer the domain/email grammars; once a letter is
+        # part of the code, following digit words turn cheap so the whole
+        # code stays one token (e.g. NY963290)
+        letter_tok = pynutil.add_weight(letter_map_upper, 0.95)
+        digit_tok_pre = pynutil.add_weight(digit_glyphs, 0.77) | pynutil.add_weight(digit_words, 0.95)
+        digit_tok_post = pynutil.add_weight(digit_glyphs, 0.77) | pynutil.add_weight(digit_words, 0.10)
+        alnum_token = digit_tok_pre | letter_tok
+        alnum_token_post = digit_tok_post | letter_tok
+        alnum_run_digits = (
+            digit_tok_pre + delete_space + digit_tok_pre + pynini.closure(delete_space + digit_tok_pre, 0)
         )
-        alnum_run = alnum_token + delete_space + alnum_token + pynini.closure(delete_space + alnum_token, 0)
+        alnum_run_letter = (
+            digit_tok_post
+            + delete_space
+            + pynini.closure(digit_tok_post + delete_space, 0)
+            + letter_tok
+            + pynini.closure(delete_space + alnum_token_post, 0)
+        ) | (letter_tok + delete_space + alnum_token_post + pynini.closure(delete_space + alnum_token_post, 0))
+        alnum_run = alnum_run_digits | alnum_run_letter
 
         alnum_hyphen_ext = (
             delete_space
             + (pynutil.delete("हाइफ़न") | pynutil.delete("हाइफन"))
             + pynutil.insert("-")
             + delete_space
-            + alnum_token
-            + pynini.closure(delete_space + alnum_token, 0)
+            + alnum_token_post
+            + pynini.closure(delete_space + alnum_token_post, 0)
         )
         alnum_body_start = alnum_run | (alnum_token + alnum_hyphen_ext)
         alnum_body = alnum_body_start + pynini.closure(
@@ -632,7 +648,11 @@ class ElectronicFst(GraphFst):
             | pynutil.add_weight(lit_close_paren, 1.0),
             0,
         )
-        alnum_letterdigit_fst = pynutil.insert("domain: \"") + alnum_body + pynutil.insert("\"")
+        # allow an attached opening parenthesis, e.g. (ए वी आई सी) -> (AVIC)
+        alnum_lead_paren = pynini.closure(pynini.accep("(") + delete_zero_or_one_space, 0, 1)
+        alnum_letterdigit_fst = (
+            pynutil.insert("domain: \"") + alnum_lead_paren + alnum_body + pynutil.insert("\"")
+        )
 
         chem_fst = (
             pynutil.add_weight(pynutil.insert("domain: \"") + chem_named_map + pynutil.insert("\""), 0.04)
@@ -653,7 +673,7 @@ class ElectronicFst(GraphFst):
             | pynutil.add_weight(tilde_path_fst, 1.12)
             | pynutil.add_weight(unix_rel_path_fst, 15.00)
             | pynutil.add_weight(literal_rel_path_fst, 1.15)
-            | pynutil.add_weight(alnum_phrase_fst, 0.05)
+            | pynutil.add_weight(alnum_phrase_fst, 1.00)
             | pynutil.add_weight(chem_spelled_fst, 1.18)
             | pynutil.add_weight(alnum_letterdigit_fst, 0.90)
             | pynutil.add_weight(plain_fst, 1.30)

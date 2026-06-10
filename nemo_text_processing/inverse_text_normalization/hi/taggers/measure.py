@@ -198,16 +198,25 @@ class MeasureFst(GraphFst):
         ).optimize()
         any_word = pynini.closure(non_space_non_comma, 1).optimize()
 
-        text_word = pynini.difference(any_word, pynini.union(all_digit_inputs, all_ordinal_inputs)).optimize()
+        # डॉट / एट mark spelled domains and emails — the address chain must
+        # not absorb words across them
+        text_word = pynini.difference(
+            any_word,
+            pynini.union(all_digit_inputs, all_ordinal_inputs, pynini.accep("डॉट"), pynini.accep("एट")),
+        ).optimize()
 
         digit_block = digit_unit + pynini.closure(pynutil.add_weight(delete_one_space + digit_unit, -1.0))
 
         connector = delete_one_space + special_word + delete_one_space
 
+        # text words must stay costly enough that sentences which merely
+        # contain an address cue (e.g. हाउस, लेन inside spelled emails/domains)
+        # are not swallowed whole by the address graph, yet cheap enough that
+        # spelled letters inside real addresses (एन एस डब्ल्यू) stay untouched
         matchable = pynini.union(
             pynutil.add_weight(digit_block, -0.1),
             pynutil.add_weight(ordinal_word, -0.2),
-            pynutil.add_weight(text_word, 0.1),
+            pynutil.add_weight(text_word, 1.0),
         ).optimize()
 
         chain = matchable + pynini.closure(pynutil.add_weight(connector + matchable, -0.5))

@@ -233,8 +233,31 @@ class CardinalFst(GraphFst):
             2,
         )
 
+        # Conventional compound magnitudes: "पाँच हज़ार करोड़" -> ५०००००००००० ,
+        # "दो लाख करोड़" -> २०००००००००००
+        delete_crore = pynutil.delete("करोड़") | pynutil.delete("करोड़")
+        graph_thousand_crores = (
+            (graph_digit | graph_teens_and_ties)
+            + delete_space
+            + delete_thousand
+            + pynutil.insert("०००")
+            + delete_space
+            + delete_crore
+            + pynutil.insert("०००००००")
+        )
+        graph_lakh_crores = (
+            (graph_digit | graph_teens_and_ties)
+            + delete_space
+            + pynutil.delete("लाख")
+            + pynutil.insert("०००००")
+            + delete_space
+            + delete_crore
+            + pynutil.insert("०००००००")
+        )
+        graph_compound_crores = graph_thousand_crores | graph_lakh_crores
+
         graph = pynini.union(
-            graph_ind + delete_space + self.graph_hundreds, graph_zero, graph_no_prefix
+            graph_ind + delete_space + self.graph_hundreds, graph_zero, graph_no_prefix, graph_compound_crores
         )  # graph_digit_plus_hundred,
 
         graph = graph @ pynini.union(
